@@ -124,8 +124,12 @@ def build_features(df: pd.DataFrame) -> pd.DataFrame:
         default=0,
     )
 
-    # events, settable, calendar-known so not subject to the t-28 rule
-    out["event_cat"] = out["event_type_1"].astype(str) + "_" + out["cat_id"].astype(str)
+    # events, settable, calendar-known so not subject to the t-28 rule.
+    # category dtype (not object/str) so LightGBM's auto-categorical
+    # detection picks it up like the other categorical features.
+    out["event_cat"] = (
+        out["event_type_1"].astype(str) + "_" + out["cat_id"].astype(str)
+    ).astype("category")
     out["days_to_next_event"], out["days_since_last_event"] = _event_distances(out)
 
     # Christmas closure, settable
