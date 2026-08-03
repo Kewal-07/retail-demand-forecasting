@@ -6,9 +6,9 @@ reference, not a polished changelog.
 
 ## Status
 
-Phase 1 (data pipeline) and the first checklist box of Phase 2 (baselines +
-metrics) are done. See the project's own checklist for the authoritative
-phase-by-phase status.
+Phase 1 (data pipeline) and Phase 2's first two checklist boxes (baselines +
+metrics, point model) are done. See the project's own checklist for the
+authoritative phase-by-phase status.
 
 ## Design decisions worth remembering
 
@@ -98,6 +98,37 @@ insists on a real-data check, not just the synthetic leakage tests.
    square root -> NaN. Fixed by casting to float64 before any arithmetic
    in `rmsse()` and `pinball_loss()`.
 
+8. **`event_cat` was object dtype, not category.** Built via string
+   concatenation (`.astype(str) + "_" + ...`) with no final `.astype
+   ("category")`. LightGBM auto-detects pandas `category` columns but
+   errors on raw object columns -- would have failed at the first
+   `train_tweedie()` call. Fixed in `pipeline.py`; `data/ca1_features
+   .parquet` (generated before the fix) still has it as object, so
+   `train_point.py`'s `_split_xy()` defensively casts any object column to
+   category at the training boundary instead of requiring a Colab rerun.
+
+9. **10-store combined dataset didn't fit in Colab RAM at full scale.**
+   The 10 per-store parquets sum to ~11.6GB even after a float32 downcast
+   on load; `pd.concat()` needs roughly 2x that at its peak (all source
+   frames plus the new combined one), well past the ~12.7GB ceiling --
+   crashed right after all 10 files finished loading, before printing the
+   combined shape. Fixed by sampling 30% of item-store series per store
+   (all stores represented, full day range per sampled item -- the
+   lag/rolling features are already baked-in columns, so there's no
+   continuity to preserve) for the global-vs-per-store comparison
+   specifically. This is a real methodology choice, not just a memory
+   workaround: the comparison answers "does global beat per-store?" on a
+   representative subset, not literally every row.
+
+10. **No training progress visibility during the slow Colab run.**
+    `train_tweedie()` sets `"verbosity": -1` and the early-stopping
+    callback's `verbose=False`, so Cell 4's ~40-minute run printed nothing
+    until it finished. Checking Colab's RAM graph (steady ~6.8/12.7GB,
+    not flatlined) was the only way to tell it was still actively
+    computing rather than hung. Worth adding periodic eval logging
+    (`lgb.log_evaluation(period=N)`) if a long unattended run needs to be
+    monitored again.
+
 ## Baseline results (CA_1 sample, walk-forward, train<=1885 / validate 1886-1913)
 
 | baseline | mean RMSSE | dollar-weighted RMSSE |
@@ -108,6 +139,19 @@ insists on a real-data check, not just the synthetic leakage tests.
 
 3,049 CA_1 items evaluated. `moving_average` is the strongest of the three
 on this proxy metric.
+
+## Point model results
+
+**Point model vs seasonal_naive** (CA_1 only, local, train<=1885 /
+validate 1886-1913, item-store WRMSSE): point model **0.3275** vs
+seasonal_naive's 1.0610 -- a clear win.
+
+**Global vs per-store** (full 10-store dataset, 30% item sample, Colab,
+same split): global **0.3293** vs per-store **0.3302** -- global wins,
+narrowly. `store_id` as a feature in one model edges out training 10
+separate boosters. Matches the artifact naming in the feature schema
+reference table (`point_tweedie_global.txt` as "winning structure"),
+which anticipated this outcome.
 
 ## Repo housekeeping
 
