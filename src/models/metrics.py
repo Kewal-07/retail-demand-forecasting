@@ -30,10 +30,20 @@ def series_weights(train_tail: pd.DataFrame, prices: pd.DataFrame, level: str) -
 def wrmsse_level(
     y_true: pd.DataFrame, y_pred: pd.DataFrame, y_train: pd.DataFrame, weights: pd.Series
 ) -> float:
+    # y_train columns can carry leading NaN when built via pivot() across
+    # series with different listing dates (a series not yet listed on the
+    # table's earliest date has no row there, hence NaN, not zero). NaN
+    # anywhere in y_train makes rmsse()'s denominator NaN, which pandas'
+    # skipna=True default then silently drops from the weighted sum below
+    # -- so any level with mixed listing dates would silently score only
+    # the subset of series listed since day 1. dropna() first so the
+    # denominator reflects each series' own available history instead.
     scores = pd.Series(
         {
             col: rmsse(
-                y_true[col].to_numpy(), y_pred[col].to_numpy(), y_train[col].to_numpy()
+                y_true[col].to_numpy(),
+                y_pred[col].to_numpy(),
+                y_train[col].dropna().to_numpy(),
             )
             for col in y_true.columns
         }

@@ -140,7 +140,44 @@ insists on a real-data check, not just the synthetic leakage tests.
 3,049 CA_1 items evaluated. `moving_average` is the strongest of the three
 on this proxy metric.
 
-## Point model results
+## CORRECTION: wrmsse_level silently dropped ~60% of items (2026-08-03)
+
+The numbers below (point model 0.3275, global 0.3293, per-store 0.3302,
+Optuna best_value 0.3258) were all computed with a real bug in
+`wrmsse_level()`: it pivots `y_train` across all series in the level, and
+any series not listed since the table's earliest date gets leading NaN
+(no row before its own listing date, not a zero). `rmsse()`'s denominator
+(`np.diff` then `np.mean`) returns NaN for any array containing NaN, and
+`pandas.Series.sum()`'s default `skipna=True` then silently dropped those
+NaN-scored series from the weighted sum -- while the weights still summed
+to 1.0 over the *full* item set. On CA_1, **1,845 of 3,049 items (60%)**
+were silently excluded this way. Fixed by `.dropna()` on each y_train
+column before calling `rmsse()`, so the denominator reflects each
+series' own available history instead of the pivot table's padding.
+
+This does NOT affect the walk-forward baseline numbers below (naive
+1.0549, seasonal_naive 1.0610, moving_average 0.8176) -- that script
+computed each item's RMSSE from its own series directly, never through a
+multi-series pivot, so it never hit this NaN-padding issue.
+
+**Corrected, single-origin, apples-to-apples (all four evaluated on
+CA_1's full 3,049 items, all using item-store WRMSSE with the fix):**
+
+| method | WRMSSE |
+|---|---|
+| naive | 1.1182 |
+| seasonal_naive | 1.0717 |
+| moving_average | 0.8352 |
+| point model | 0.7931 |
+
+Point model still wins, but by a much smaller margin than originally
+reported -- barely beats moving_average (~5%), not a 4x improvement.
+**Global-vs-per-store (0.3293/0.3302) and the Optuna study (best_value
+0.3258) both used the same buggy metric and need to be rerun to trust
+the numbers** -- pending a decision on whether/how to redo the Colab run
+and the Optuna search.
+
+## Point model results (SUPERSEDED, see correction above)
 
 **Point model vs seasonal_naive** (CA_1 only, local, train<=1885 /
 validate 1886-1913, item-store WRMSSE): point model **0.3275** vs
@@ -153,7 +190,7 @@ separate boosters. Matches the artifact naming in the feature schema
 reference table (`point_tweedie_global.txt` as "winning structure"),
 which anticipated this outcome.
 
-## Optuna study
+## Optuna study (SUPERSEDED, see correction above -- objective used the buggy metric)
 
 Ran locally on CA_1 (75-trial run planned, ~56s/trial in a 3-trial dry
 run). Stopped early at **39/75 trials** -- actual pace was much slower
