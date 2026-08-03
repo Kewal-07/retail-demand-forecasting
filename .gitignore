@@ -10,7 +10,10 @@ models/*
 !models/metadata.json
 data/*
 !data/.gitkeep
+# ca1_features.parquet is ~138MB, over GitHub's 100MB file limit; kept
+# local-only, regenerate it via notebooks/01_build_features.ipynb
 reports/*.html
+!reports/eda.html
 .DS_Store
 *.egg-info/
 .ipynb_checkpoints/
