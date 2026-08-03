@@ -172,10 +172,23 @@ CA_1's full 3,049 items, all using item-store WRMSSE with the fix):**
 
 Point model still wins, but by a much smaller margin than originally
 reported -- barely beats moving_average (~5%), not a 4x improvement.
-**Global-vs-per-store (0.3293/0.3302) and the Optuna study (best_value
-0.3258) both used the same buggy metric and need to be rerun to trust
-the numbers** -- pending a decision on whether/how to redo the Colab run
-and the Optuna search.
+
+**Both reruns done (2026-08-03), both with the fixed metric:**
+
+- **Global vs per-store, full 10-store Colab data**: global **0.8462**
+  vs per-store **0.8487** -- global still wins, and by nearly the same
+  *relative* margin as the buggy run (~0.3% both times). Makes sense:
+  both structures were affected by the same systematic item-dropping, so
+  their relative comparison was distorted less than the absolute numbers
+  were. Conclusion (global wins) holds.
+- **Optuna, 30 trials, learning_rate floor raised to 0.02** (the
+  original 0.01 floor produced the slowest trials without meaningfully
+  better scores -- confirmed by this rerun finishing in 126s/trial average
+  vs the first run's 4.5min/trial): best value **0.7907** (trial 25),
+  essentially matching the untuned point model's 0.7931 -- tuning found
+  only a ~0.3% improvement over the defaults already used. Saved to
+  `models/best_params.json`, `models/optuna_study_v2.pkl`,
+  `models/optuna_trials_v2.csv`.
 
 ## Point model results (SUPERSEDED, see correction above)
 
