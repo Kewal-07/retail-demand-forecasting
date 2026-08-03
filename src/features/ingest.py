@@ -54,7 +54,14 @@ def merge_sources(
     calendar["year"] = calendar["year"].astype("int16")
     calendar["wm_yr_wk"] = calendar["wm_yr_wk"].astype("int32")
 
+    # store_id/item_id are already category on sales_long (the 59.2M-row
+    # side) after reshape_and_downcast. Left as object here, the merge below
+    # would need to reconcile a categorical key against an object key on the
+    # large side, which can force pandas to expand it back to object -- the
+    # same blowup this function exists to avoid, just for these two columns.
     prices = prices.copy()
+    prices["store_id"] = prices["store_id"].astype("category")
+    prices["item_id"] = prices["item_id"].astype("category")
     prices["wm_yr_wk"] = prices["wm_yr_wk"].astype("int32")
     prices["sell_price"] = prices["sell_price"].astype("float32")
 
