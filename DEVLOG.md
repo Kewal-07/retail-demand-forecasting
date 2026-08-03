@@ -153,6 +153,36 @@ separate boosters. Matches the artifact naming in the feature schema
 reference table (`point_tweedie_global.txt` as "winning structure"),
 which anticipated this outcome.
 
+## Optuna study
+
+Ran locally on CA_1 (75-trial run planned, ~56s/trial in a 3-trial dry
+run). Stopped early at **39/75 trials** -- actual pace was much slower
+than the dry run (~4.5 min/trial average, some low-learning-rate trials
+needing far more boosting rounds before early stopping), and results had
+clearly plateaued: best value moved from 0.32594 (trial 10) to 0.32583
+(trial 38) over 28 more trials, a 0.03% improvement. Diminishing returns
+from TPE having already found the good region.
+
+Since the run script only persisted results after all 75 trials
+completed, stopping it early meant reconstructing best_params.json and
+optuna_trials.csv by parsing the captured trial log directly rather than
+from a live Study object -- worth remembering: any long Optuna run should
+either use RDB storage (`optuna.create_study(storage=...)`) so state
+survives an interrupt, or persist incrementally, not just at the end.
+
+Saved to `models/best_params.json` and `models/optuna_trials.csv`:
+
+```json
+{
+  "num_leaves": 190, "learning_rate": 0.0115, "min_data_in_leaf": 171,
+  "tweedie_variance_power": 1.233, "feature_fraction": 0.800,
+  "bagging_fraction": 0.925, "bagging_freq": 3
+}
+```
+best_value (item-store WRMSSE): 0.3258 -- essentially matching the
+untuned point model's 0.3275, confirming the untuned defaults used
+earlier were already close to reasonable.
+
 ## Repo housekeeping
 
 - `CLAUDE.md` is intentionally gitignored (not on GitHub) per an explicit
