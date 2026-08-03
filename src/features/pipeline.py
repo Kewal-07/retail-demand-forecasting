@@ -106,10 +106,10 @@ def build_features(df: pd.DataFrame) -> pd.DataFrame:
     # never reaches past t - 28
     lag28_sales = out.groupby(id_key, observed=True, sort=False)["sales"].shift(ROLL_SHIFT)
     for w in ROLL_WINDOWS:
-        out[f"roll_mean_{w}_{ROLL_SHIFT}"] = lag28_sales.groupby(id_key, sort=False).transform(
+        out[f"roll_mean_{w}_{ROLL_SHIFT}"] = lag28_sales.groupby(id_key, observed=True, sort=False).transform(
             lambda s, w=w: s.rolling(w).mean()
         )
-        out[f"roll_std_{w}_{ROLL_SHIFT}"] = lag28_sales.groupby(id_key, sort=False).transform(
+        out[f"roll_std_{w}_{ROLL_SHIFT}"] = lag28_sales.groupby(id_key, observed=True, sort=False).transform(
             lambda s, w=w: s.rolling(w).std()
         )
 
@@ -145,7 +145,7 @@ def build_features(df: pd.DataFrame) -> pd.DataFrame:
     price_changed = out["sell_price"] != out.groupby(id_key, observed=True, sort=False)[
         "sell_price"
     ].shift(1)
-    days_since_price_change = price_changed.groupby(id_key, sort=False).transform(
+    days_since_price_change = price_changed.groupby(id_key, observed=True, sort=False).transform(
         lambda s: pd.Series(_days_since_last_true(s.to_numpy()), index=s.index)
     )
     out["weeks_since_price_change"] = days_since_price_change // 7
@@ -154,21 +154,21 @@ def build_features(df: pd.DataFrame) -> pd.DataFrame:
     # including day s) then shifted by 28, so the value used for target t
     # only reflects sales known at t - 28.
     zero_ind = (out["sales"] == 0).astype(float)
-    zshare_causal = zero_ind.groupby(id_key, sort=False).transform(
+    zshare_causal = zero_ind.groupby(id_key, observed=True, sort=False).transform(
         lambda s: s.rolling(28, min_periods=1).mean()
     )
-    out["zero_share_28"] = zshare_causal.groupby(id_key, sort=False).shift(ROLL_SHIFT)
+    out["zero_share_28"] = zshare_causal.groupby(id_key, observed=True, sort=False).shift(ROLL_SHIFT)
 
     nonzero_sales = out["sales"].where(out["sales"] != 0)
-    mean_nz_causal = nonzero_sales.groupby(id_key, sort=False).transform(
+    mean_nz_causal = nonzero_sales.groupby(id_key, observed=True, sort=False).transform(
         lambda s: s.expanding(min_periods=1).mean()
     )
-    out["mean_nonzero_sales"] = mean_nz_causal.groupby(id_key, sort=False).shift(ROLL_SHIFT)
+    out["mean_nonzero_sales"] = mean_nz_causal.groupby(id_key, observed=True, sort=False).shift(ROLL_SHIFT)
 
-    days_since_sale_causal = out.groupby(id_key, sort=False)["sales"].transform(
+    days_since_sale_causal = out.groupby(id_key, observed=True, sort=False)["sales"].transform(
         lambda s: pd.Series(_days_since_last_true((s != 0).to_numpy()), index=s.index)
     )
-    out["days_since_last_sale"] = days_since_sale_causal.groupby(id_key, sort=False).shift(
+    out["days_since_last_sale"] = days_since_sale_causal.groupby(id_key, observed=True, sort=False).shift(
         ROLL_SHIFT
     )
 
