@@ -22,6 +22,9 @@ def reshape_and_downcast(sales_wide: pd.DataFrame) -> pd.DataFrame:
     sales_long["sales"] = sales_long["sales"].astype("int16")
     for col in ID_COLS:
         sales_long[col] = sales_long[col].astype("category")
+    # d has ~1,941 unique values repeated across 59.2M rows; left as object
+    # dtype this is several GB of redundant string storage.
+    sales_long["d"] = sales_long["d"].astype("category")
     return sales_long
 
 

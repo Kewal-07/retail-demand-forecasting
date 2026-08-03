@@ -66,6 +66,7 @@ def test_downcast_dtypes():
     assert long["sales"].dtype == "int16"
     for col in ID_COLS:
         assert isinstance(long[col].dtype, pd.CategoricalDtype)
+    assert isinstance(long["d"].dtype, pd.CategoricalDtype)
 
 
 def test_merge_sources_preserves_row_count():
