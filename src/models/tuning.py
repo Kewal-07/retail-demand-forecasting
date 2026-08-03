@@ -16,7 +16,13 @@ def optuna_search(train_df: pd.DataFrame, val_df: pd.DataFrame, n_trials: int = 
     def objective(trial: optuna.Trial) -> float:
         params = {
             "num_leaves": trial.suggest_int("num_leaves", 15, 255),
-            "learning_rate": trial.suggest_float("learning_rate", 0.01, 0.2, log=True),
+            # floor raised from 0.01: the first study showed sub-0.02
+            # learning rates need far more boosting rounds before early
+            # stopping, dominating wall-clock time without meaningfully
+            # beating higher-LR trials (best trial there used lr=0.0115,
+            # but several lr>0.15 trials scored within 1% of it in a
+            # fraction of the time)
+            "learning_rate": trial.suggest_float("learning_rate", 0.02, 0.2, log=True),
             "min_data_in_leaf": trial.suggest_int("min_data_in_leaf", 20, 200),
             "tweedie_variance_power": trial.suggest_float("tweedie_variance_power", 1.05, 1.9),
             "feature_fraction": trial.suggest_float("feature_fraction", 0.6, 1.0),
