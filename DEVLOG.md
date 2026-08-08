@@ -6,11 +6,48 @@ reference, not a polished changelog.
 
 ## Status
 
-Phase 1 and Phase 2 are done (verified/corrected, see below). Phase 3's
-first two boxes (train_quantile.py, conformal.py) are done. See the
-project's own checklist for the authoritative phase-by-phase status.
+Phase 1, 2, 3 are done (verified/corrected, see below). Phase 4's first
+two boxes (newsvendor.py, simulate.py) are done. See the project's own
+checklist for the authoritative phase-by-phase status.
 
-Quantile models are now saved to disk: `models/q10.txt` ... `q90.txt`.
+Model artifacts now saved to disk: `models/point_tweedie_global.txt`,
+`models/q10.txt` ... `q90.txt`.
+
+## Inventory simulation at cost ratios 1:1, 3:1, 9:1
+
+Order policy: "order-up-to the forecast" -- each day, order enough to
+bring inventory up to that day's forecast, netting out leftover inventory
+carried in from the previous day (a design choice, not spec'd verbatim;
+simulate_inventory_policy() itself just simulates a given order sequence,
+it doesn't compute one). Point-forecast policy uses the trained tweedie
+point model's prediction every day regardless of ratio (cost-agnostic).
+Newsvendor policy uses the quantile matching each ratio's service level
+(q50/q75/q90). CA_1 validation window, all 3,049 items.
+
+**Fill rates closely track target service levels** (51.9%/77.7%/90.7%
+vs targets 50%/75%/90%) -- a strong sanity check that the simulation
+loop and the order-up-to policy are working as intended.
+
+| ratio | service level | policy | total cost | fill rate |
+|---|---|---|---|---|
+| 1:1 | 0.50 | point-forecast | 96,829 | 63.6% |
+| 1:1 | 0.50 | newsvendor | 88,875 | 51.9% |
+| 3:1 | 0.75 | point-forecast | 190,085 | 63.6% |
+| 3:1 | 0.75 | newsvendor | 175,359 | 77.7% |
+| 9:1 | 0.90 | point-forecast | 469,853 | 63.6% |
+| 9:1 | 0.90 | newsvendor | 289,193 | 90.7% |
+
+Newsvendor beats point-forecast at all three ratios: **+8.21%, +7.75%,
++38.45%** cost reduction. The point-forecast policy's fill rate stays
+fixed at 63.6% across all three ratios by construction -- it never
+accounts for the cost ratio, only the newsvendor policy does. The dip
+from 8.21% (1:1) to 7.75% (3:1) before the jump to 38.45% (9:1) is not
+monotonic and is left as-is rather than smoothed over -- plausibly a
+real interaction between the quantile crossing already noted (0.85% of
+pairs) and how each quantile level's calibration quality happens to
+trade off holding vs stockout cost at that specific ratio, not
+investigated further here. Full results in
+`models/simulation_results.csv`.
 
 ## Conformal: split vs adaptive on volatile vs stable days
 
