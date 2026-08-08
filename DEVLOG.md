@@ -6,9 +6,26 @@ reference, not a polished changelog.
 
 ## Status
 
-Phase 1 (data pipeline) and Phase 2's first two checklist boxes (baselines +
-metrics, point model) are done. See the project's own checklist for the
-authoritative phase-by-phase status.
+Phase 1 and Phase 2 are done (verified/corrected, see below). Phase 3's
+first box (train_quantile.py) is done. See the project's own checklist
+for the authoritative phase-by-phase status.
+
+## Quantile models
+
+`train_quantile_models()` trains 5 independent boosters (alpha 0.1, 0.25,
+0.5, 0.75, 0.9), reusing the Optuna-tuned structural params (minus
+`tweedie_variance_power`, irrelevant to the quantile objective). CA_1,
+local: 1069s total (~18 min) for all 5, alpha=0.25 needed the most
+rounds (432) before early stopping.
+
+**Quantile crossing: 0.85% of adjacent-quantile pairs violate
+monotonicity** (2,894 / 341,488 -- e.g. P25 < P10 for that row). Expected
+and well-documented for independently-trained quantile regressors, not a
+bug -- each booster has no knowledge of the others' predictions. Left
+unaddressed in `train_quantile_models()` itself since conformal
+calibration (next Phase 3 box) operates on top of these raw quantiles;
+worth checking whether conformal calibration incidentally fixes this or
+whether serving needs an explicit sort/clip step later.
 
 ## Design decisions worth remembering
 
