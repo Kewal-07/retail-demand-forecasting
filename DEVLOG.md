@@ -7,8 +7,38 @@ reference, not a polished changelog.
 ## Status
 
 Phase 1 and Phase 2 are done (verified/corrected, see below). Phase 3's
-first box (train_quantile.py) is done. See the project's own checklist
-for the authoritative phase-by-phase status.
+first two boxes (train_quantile.py, conformal.py) are done. See the
+project's own checklist for the authoritative phase-by-phase status.
+
+Quantile models are now saved to disk: `models/q10.txt` ... `q90.txt`.
+
+## Conformal: split vs adaptive on volatile vs stable days
+
+No calendar events fall in the validation window (1886-1913), but there
+is a real SNAP transition -- days 1890-1899 SNAP-active, surrounded by
+inactive days -- used as the volatility signal instead. Both methods
+compared at store-daily-aggregate granularity (summed P10/P50/P90 across
+all 3,049 CA_1 items per day; sum-of-quantiles approximates the true
+aggregate quantile, acceptable for this diagnostic, not a formal
+guarantee). Split conformal calibrated once on the trailing 90 training
+days (1796-1885, never touching the reserved test set 1914-1941 per
+Section 15); adaptive conformal (ACI, gamma=0.1) walked forward through
+the 28 validation days starting cold.
+
+Raw coverage (split: 100%/83.3% volatile/stable; adaptive: 80%/77.8%)
+is too noisy to read much into directly -- only 10 volatile and 18
+stable days, so the standard error on these proportions is roughly
++-10-20 points.
+
+**The robust finding is interval width**: adaptive conformal's band was
+**24% wider on volatile days than stable days** (4068 vs 3284) purely
+from reacting online to recent errors. Split conformal's correction is a
+single static number from the calibration set -- it cannot adapt within
+the validation window at all, regardless of which day it's applied to.
+This is the actual theoretical distinction Section 6C asks to
+demonstrate: adaptive responds to regime shifts; split only guarantees
+*marginal*, not *conditional*, coverage. Raw output saved to
+`models/conformal_volatile_vs_stable.csv`.
 
 ## Quantile models
 
