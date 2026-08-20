@@ -6,12 +6,129 @@ reference, not a polished changelog.
 
 ## Status
 
-Phase 1, 2, 3 are done (verified/corrected, see below). Phase 4's first
-two boxes (newsvendor.py, simulate.py) are done. See the project's own
+Phase 1-4 are done (verified/corrected, see below). Phase 5's api/ box
+is done. Ahead of nominal phase order, src/explain/retrieval.py and
+generate.py (nominally Phase 6) were also built, since api/routers/
+explain.py genuinely depends on them -- test_api.py's explain tests
+aren't achievable without that logic existing. See the project's own
 checklist for the authoritative phase-by-phase status.
 
 Model artifacts now saved to disk: `models/point_tweedie_global.txt`,
-`models/q10.txt` ... `q90.txt`.
+`models/q10.txt` ... `q90.txt`, `models/feature_list.json`.
+
+## api/: a real categorical dtype bug, and local-dev design choices
+
+**Bug**: `apply_scenario()` operates on a single row (`pd.Series`), so
+`predict.py`'s scenario path rebuilds the 28-row window via
+`pd.DataFrame([apply_scenario(row, scenario) for row in ...])`. That
+reconstruction loses every column's category dtype entirely -- each row
+becomes a plain object-dtype Series when extracted individually. Casting
+the lost columns back to category using only that 28-row window's own
+values (an early draft did this) creates a *different* categorical
+encoding than what the boosters were trained on, and LightGBM rejects it
+outright: `"train and valid dataset categorical_feature do not match."`
+Fixed by capturing `window.dtypes` *before* the scenario loop and
+reapplying each `CategoricalDtype` (with its original, full category
+list) after reconstruction, rather than re-deriving categories from the
+small window.
+
+Separately, `event_cat` was still object dtype in the already-saved CA_1
+parquet (generated before pipeline.py's category-dtype fix, see the
+earlier `event_cat` bug above) -- `api/main.py` now casts any
+`FEATURE_COLUMNS` column that's still object dtype to category *once*,
+at full-dataset scope, right after loading `DEMO_DATA`. That gives every
+later window slice a canonical categorical structure to inherit,
+instead of each request re-deriving one from whatever rows it happens
+to touch.
+
+**Local-dev scope, explicit simplifications** (not full Section 10
+behavior, deliberately):
+- `predict`/`explain`/`alerts` serve from `data/ca1_features.parquet`
+  loaded into `app.state` at startup as the "database" -- there is no
+  live feature pipeline or real inventory system behind this API.
+- `/alerts`' `inventory_on_hand` is a demo proxy (3 days of recent
+  average sales), not real stock data.
+- "Item never sold in training -> department-level forecast, flagged"
+  (Section 10) is not implemented -- an unknown `item_id` just returns
+  422. Not covered by any test_api.py test; left as a known gap rather
+  than building an untested fallback path.
+- `_template_fallback()` in generate.py now names a concrete number
+  (total forecast demand) alongside the SHAP drivers, not just driver
+  names -- needed to make `test_explain_uses_current_prediction_not_default`
+  meaningfully testable without a real Groq key (the fallback text has
+  to actually reference the forecast's numbers to prove which
+  prediction it's grounded in), and is also just a better fallback
+  experience for real users.
+- In-memory `prediction_store` (dict on `app.state`) maps prediction_id
+  -> stored context for `/explain` to look up. Fine for a single-process
+  local API; would need a real store (Redis, DynamoDB, etc.) behind a
+  multi-instance deployment.
+
+## Getting a real Groq key working (2026-08-20): four real bugs
+
+Once the user added a real `GROQ_API_KEY`, `call_groq()` kept silently
+falling back to the template -- the try/except was doing exactly what it
+should, but that meant four real problems went undetected until tested
+against the live API. In order found:
+
+1. **`groq` 0.11.0 was incompatible with the installed `httpx` (0.28.1)**:
+   `TypeError: Client.__init__() got an unexpected keyword argument
+   'proxies'` -- httpx removed that parameter, the old groq SDK still
+   passed it. Fixed by upgrading `groq` to 1.6.0 (no version was pinned
+   in Section 5's tech stack for Groq, so this was a clean upgrade, not
+   a spec deviation). `requirements.txt` updated to match.
+
+2. **The model name was stale.** `llama-3.1-8b-instant` no longer exists
+   on Groq's current API (404 model_not_found) -- Groq's hosted model
+   lineup had changed substantially since that name was first picked.
+   Queried `client.models.list()` for what's actually available now
+   rather than guessing again.
+
+3. **The obvious replacement, `openai/gpt-oss-20b`, is a reasoning
+   model.** It spends part of its token budget on hidden reasoning
+   before producing visible output (79 of 122 completion tokens on a
+   test call) -- risks empty or truncated output at the spec'd
+   `MAX_TOKENS=200`. `qwen/qwen3.6-27b` is worse: it's *also* reasoning
+   and its `<think>...` block got cut off mid-thought at 200 tokens
+   without ever reaching an answer. `groq/compound-mini` responds
+   cleanly, but is one of Groq's agentic "compound" systems that can
+   call tools/search internally -- directly conflicts with Section 6E's
+   "deterministic pipeline, no agent loop" principle. Settled on
+   `allam-2-7b`, a plain instruct model with no hidden reasoning and no
+   tool use.
+
+4. **The model hallucinated `snap_active` as "the number of Snapchat
+   users actively using the platform."** A real, serious grounding
+   failure -- SNAP means the food assistance program, nothing to do
+   with the Snapchat app, and the model confidently invented a
+   plausible-sounding wrong answer for a feature name it didn't
+   understand from the name alone. Fixed by adding `FEATURE_GLOSSARY`,
+   a complete definition for all 40 `FEATURE_COLUMNS` (feasible because
+   it's a fixed, known, bounded vocabulary for this project, not
+   open-ended), included in the prompt for whichever drivers are named,
+   with an explicit system-prompt instruction to use only those
+   definitions and never guess.
+
+5. **Separately, `predict.py` was dumping 28 raw daily rows each of
+   `calendar_events` and `price_history`** (mostly NaN events,
+   near-identical prices, `Timestamp` objects and all) straight into the
+   prompt. That produced an extremely long, repetitive block that made
+   `allam-2-7b` degenerate into pure whitespace output (200/200 tokens,
+   `finish_reason=length`, empty content) -- confirmed by testing the
+   exact same prompt structure with a short synthetic context (worked
+   fine) versus the real 28-row context (blank). Fixed with
+   `_summarize_explain_context()`: calendar events filtered to only
+   actual events (most 28-day windows have zero), price history
+   collapsed to a single "steady at $X" or "changed from $X to $Y"
+   sentence instead of 28 rows.
+
+After all five fixes, a real end-to-end `/predict` -> `/explain`
+(with a follow-up question) call produces a coherent, correctly
+grounded explanation that cites the actual price change and SHAP
+drivers with accurate definitions. `api/main.py` now calls
+`load_dotenv()` at import time so the running server actually picks up
+`.env` (it didn't before -- only my ad hoc test scripts loaded it
+manually).
 
 ## Inventory simulation at cost ratios 1:1, 3:1, 9:1
 
